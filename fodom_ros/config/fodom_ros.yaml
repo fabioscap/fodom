@@ -1,0 +1,29 @@
+fodom_ros_node:
+  ros__parameters:
+    # Frames
+    odom_frame: "odom"
+    sensor_frame: "os_lidar"
+
+    # Publishing toggles
+    publish_tf: true
+    publish_odom: false
+    publish_path: true
+    publish_keyframe: true
+
+    # Point cloud filtering
+    min_range: 1.0
+    max_range: 30.0
+    min_intensity: 1300
+
+    # KD-tree
+    max_points_per_leaf: 20
+    max_depth: 16
+    max_parallel_level: 4
+
+    # ICP
+    icp_n_iters: 10
+    icp_damping: 0.0
+    icp_max_correspondence_dist: 0.2 # [m] reject matches beyond this
+
+    # Keyframe policy
+    keyframe_min_ratio: 0.3
