@@ -30,15 +30,15 @@ void Ekf::init_from_calib() {
   status = EkfStatus::Running;
 }
 
-void Ekf::update_stillness(const ImuMeasurement& imu) {
-  still_buf.push_back(imu);
+void Ekf::update_stillness(const ImuMeasurement& imu, double stamp) {
+  still_buf.push_back({stamp, imu});
   still_sum_a += imu.accel;
   still_sum_g += imu.gyro;
   still_sumsq_a += imu.accel.squaredNorm();
   still_sumsq_g += imu.gyro.squaredNorm();
 
-  while (imu.stamp - still_buf.front().stamp > config.still_window) {
-    const auto& old = still_buf.front();
+  while (stamp - still_buf.front().first > config.still_window) {
+    const auto& old = still_buf.front().second;
     still_sum_a -= old.accel;
     still_sum_g -= old.gyro;
     still_sumsq_a -= old.accel.squaredNorm();
@@ -63,43 +63,14 @@ void Ekf::update_stillness(const ImuMeasurement& imu) {
   }
 }
 
-void Ekf::process_imu(const ImuMeasurement& imu) {
-  update_stillness(imu);
-
-  if (status == EkfStatus::Calibrating) {
-    if (is_stationary) {
-      calib_accels.push_back(imu.accel);
-      calib_gyros.push_back(imu.gyro);
-    } else if (!calib_accels.empty()) {
-      std::cerr << "[fodom] IMU moved during calibration, initializing from "
-                << calib_accels.size() << " samples\n";
-      init_from_calib();
-      calib_accels.clear();
-      calib_gyros.clear();
-      last_stamp = imu.stamp;
-    }
-
-    if (status == EkfStatus::Calibrating &&
-        calib_accels.size() >= config.calib_samples) {
-      init_from_calib();
-      calib_accels.clear();
-      calib_gyros.clear();
-      last_stamp = imu.stamp;
-    }
-    return;
-  }
-
-  predict(imu);
-}
-
-void Ekf::predict(const ImuMeasurement& imu) {
+void Ekf::predict(const ImuMeasurement& imu, double stamp) {
   if (last_stamp < 0.0) {
-    last_stamp = imu.stamp;
+    last_stamp = stamp;
     return;
   }
 
-  const Scalar dt = static_cast<Scalar>(imu.stamp - last_stamp);
-  last_stamp = imu.stamp;
+  const Scalar dt = static_cast<Scalar>(stamp - last_stamp);
+  last_stamp = stamp;
 
   const Vec3 a = imu.accel - state.accel_bias;
   const Vec3 w = imu.gyro - state.gyro_bias;

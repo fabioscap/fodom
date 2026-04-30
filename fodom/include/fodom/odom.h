@@ -1,3 +1,8 @@
+#pragma once
+
+#include <deque>
+#include <utility>
+
 #include <fodom/imu.h>
 #include <fodom/kdtree.h>
 
@@ -10,12 +15,15 @@ struct OdomConfig {
 };
 
 struct Odom {
-  void process_imu(const ImuMeasurement& imu);
-  void process_cloud(const PCloudType& cloud);
+  Odom() : ekf(config.ekf) {}
+
+  void process_imu(double stamp, const ImuMeasurement& imu);
+  void process_cloud(double stamp, const PCloudType& cloud);
 
   OdomConfig config;
+  Ekf ekf;
 
-  double stamp;
+  std::deque<std::pair<double, ImuMeasurement>> imu_buf;
 };
 
 }  // namespace fodom

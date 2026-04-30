@@ -12,7 +12,6 @@ enum class EkfStatus { Calibrating, Running };
 struct ImuMeasurement {
   Vec3 accel;
   Vec3 gyro;
-  double stamp;  // seconds
 };
 
 struct EkfConfig {
@@ -45,9 +44,8 @@ struct EkfState {
 struct Ekf {
   Ekf(EkfConfig& cfg) : config(cfg) {}
 
-  void process_imu(const ImuMeasurement& imu);
-  void update_stillness(const ImuMeasurement& imu);
-  void predict(const ImuMeasurement& imu);
+  void update_stillness(const ImuMeasurement& imu, double stamp);
+  void predict(const ImuMeasurement& imu, double stamp);
   void update_pose(const PoseType& pose);
   void init_from_calib();
   PoseType pose() const;
@@ -60,7 +58,7 @@ struct Ekf {
 
   std::vector<Vec3> calib_accels;
   std::vector<Vec3> calib_gyros;
-  std::deque<ImuMeasurement> still_buf;
+  std::deque<std::pair<double, ImuMeasurement>> still_buf;
 
   Vec3 still_sum_a = Vec3::Zero();
   Vec3 still_sum_g = Vec3::Zero();
