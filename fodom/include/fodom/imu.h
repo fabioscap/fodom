@@ -44,10 +44,8 @@ struct EkfState {
 struct Ekf {
   Ekf(EkfConfig& cfg) : config(cfg) {}
 
-  void update_stillness(const ImuMeasurement& imu, double stamp);
-  void predict(const ImuMeasurement& imu, double stamp);
+  const EkfState& step(double stamp, const ImuMeasurement& imu);
   void update_pose(const PoseType& pose);
-  void init_from_calib();
   PoseType pose() const;
 
   EkfState state;
@@ -55,6 +53,11 @@ struct Ekf {
   EkfStatus status = EkfStatus::Calibrating;
   bool is_stationary = false;
   double last_stamp = -1.0;
+
+ private:
+  void update_stillness(const ImuMeasurement& imu, double stamp);
+  void predict(const ImuMeasurement& imu, double stamp);
+  void init_from_calib();
 
   std::vector<Vec3> calib_accels;
   std::vector<Vec3> calib_gyros;

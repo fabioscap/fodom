@@ -63,6 +63,35 @@ void Ekf::update_stillness(const ImuMeasurement& imu, double stamp) {
   }
 }
 
+const EkfState& Ekf::step(double stamp, const ImuMeasurement& imu) {
+  update_stillness(imu, stamp);
+
+  if (status == EkfStatus::Calibrating) {
+    if (is_stationary) {
+      calib_accels.push_back(imu.accel);
+      calib_gyros.push_back(imu.gyro);
+    } else if (!calib_accels.empty()) {
+      std::cerr << "[fodom] IMU moved during calibration, initializing from "
+                << calib_accels.size() << " samples\n";
+      init_from_calib();
+      calib_accels.clear();
+      calib_gyros.clear();
+      last_stamp = stamp;
+    }
+
+    if (status == EkfStatus::Calibrating &&
+        calib_accels.size() >= config.calib_samples) {
+      init_from_calib();
+      calib_accels.clear();
+      calib_gyros.clear();
+      last_stamp = stamp;
+    }
+  } else if (status == EkfStatus::Running) {
+    predict(imu, stamp);
+  }
+  return state;
+}
+
 void Ekf::predict(const ImuMeasurement& imu, double stamp) {
   if (last_stamp < 0.0) {
     last_stamp = stamp;
@@ -81,32 +110,24 @@ void Ekf::predict(const ImuMeasurement& imu, double stamp) {
   state.velocity += a_world * dt;
   state.rotation = normalize_so3(state.rotation * exp_so3(w * dt));
 
-  Mat15 F = Mat15::Zero();
-  F.block<3, 3>(0, 3) = Mat3::Identity();
-  F.block<3, 3>(3, 6) = -state.rotation * skew(a);
-  F.block<3, 3>(3, 9) = -state.rotation;
-  F.block<3, 3>(6, 6) = -skew(w);
-  F.block<3, 3>(6, 12) = -Mat3::Identity();
+  Mat15 F = Mat15::Identity();
+  F.block<3, 3>(0, 3) += dt * Mat3::Identity();
+  F.block<3, 3>(3, 6) -= dt * state.rotation * skew(a);
+  F.block<3, 3>(3, 9) -= dt * state.rotation;
+  F.block<3, 3>(6, 6) -= dt * skew(w);
+  F.block<3, 3>(6, 12) -= dt * Mat3::Identity();
 
-  const Mat15 Phi = Mat15::Identity() + F * dt;
+  state.P = F * state.P * F.transpose();
 
-  Mat15x12 G = Mat15x12::Zero();
-  G.block<3, 3>(3, 0) = -state.rotation;
-  G.block<3, 3>(6, 3) = -Mat3::Identity();
-  G.block<3, 3>(9, 6) = Mat3::Identity();
-  G.block<3, 3>(12, 9) = Mat3::Identity();
-
-  Mat12 Qc = Mat12::Zero();
-  Qc.block<3, 3>(0, 0) =
-      (config.accel_noise * config.accel_noise) * Mat3::Identity();
-  Qc.block<3, 3>(3, 3) =
-      (config.gyro_noise * config.gyro_noise) * Mat3::Identity();
-  Qc.block<3, 3>(6, 6) =
-      (config.accel_bias_rw * config.accel_bias_rw) * Mat3::Identity();
-  Qc.block<3, 3>(9, 9) =
-      (config.gyro_bias_rw * config.gyro_bias_rw) * Mat3::Identity();
-
-  state.P = Phi * state.P * Phi.transpose() + G * Qc * G.transpose() * dt;
+  // block update
+  state.P.block<3, 3>(3, 3).diagonal().array() +=
+      config.accel_noise * config.accel_noise * dt;
+  state.P.block<3, 3>(6, 6).diagonal().array() +=
+      config.gyro_noise * config.gyro_noise * dt;
+  state.P.block<3, 3>(9, 9).diagonal().array() +=
+      config.accel_bias_rw * config.accel_bias_rw * dt;
+  state.P.block<3, 3>(12, 12).diagonal().array() +=
+      config.gyro_bias_rw * config.gyro_bias_rw * dt;
 }
 
 void Ekf::update_pose(const PoseType& pose) {
