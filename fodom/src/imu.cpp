@@ -46,7 +46,8 @@ void Ekf::update_stillness(const ImuMeasurement& imu, double stamp) {
     still_buf.pop_front();
   }
 
-  if (still_buf.size() >= 2) {
+  const double window_elapsed = stamp - still_buf.front().first;
+  if (window_elapsed >= config.still_window) {
     const Scalar n = static_cast<Scalar>(still_buf.size());
     const Vec3 mean_a = still_sum_a / n;
     const Vec3 mean_g = still_sum_g / n;
@@ -67,24 +68,18 @@ const EkfState& Ekf::step(double stamp, const ImuMeasurement& imu) {
   update_stillness(imu, stamp);
 
   if (status == EkfStatus::Calibrating) {
-    if (is_stationary) {
-      calib_accels.push_back(imu.accel);
-      calib_gyros.push_back(imu.gyro);
-    } else if (!calib_accels.empty()) {
-      std::cerr << "[fodom] IMU moved during calibration, initializing from "
-                << calib_accels.size() << " samples\n";
-      init_from_calib();
-      calib_accels.clear();
-      calib_gyros.clear();
-      last_stamp = stamp;
-    }
+    if (calib_accels.empty())
+      std::cerr << "[fodom] calibrating — keep sensor still\n";
 
-    if (status == EkfStatus::Calibrating &&
-        calib_accels.size() >= config.calib_samples) {
+    calib_accels.push_back(imu.accel);
+    calib_gyros.push_back(imu.gyro);
+
+    if (calib_accels.size() >= config.calib_samples) {
       init_from_calib();
       calib_accels.clear();
       calib_gyros.clear();
       last_stamp = stamp;
+      std::cerr << "[fodom] calibration done\n";
     }
   } else if (status == EkfStatus::Running) {
     predict(imu, stamp);
@@ -130,7 +125,7 @@ void Ekf::predict(const ImuMeasurement& imu, double stamp) {
       config.gyro_bias_rw * config.gyro_bias_rw * dt;
 }
 
-void Ekf::update_pose(const PoseType& pose) {
+void Ekf::update_pose(const PoseType& pose, double stamp) {
   if (status != EkfStatus::Running) return;
 
   Mat6x15 H = Mat6x15::Zero();
@@ -159,6 +154,8 @@ void Ekf::update_pose(const PoseType& pose) {
 
   const Mat15 I_KH = Mat15::Identity() - K * H;
   state.P = I_KH * state.P * I_KH.transpose() + K * R_meas * K.transpose();
+
+  last_stamp = stamp;
 }
 
 PoseType Ekf::pose() const {

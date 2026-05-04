@@ -49,9 +49,9 @@ struct ICPResult {
 
 void get_leaves(const TreeNode& tree, std::vector<Vec3>& leaves);
 
-ICPResult match_point_cloud(
-    const TreeNode& fixed, const PCloudType& moving,
-    const PoseType& initial_guess = PoseType::Identity(),
-    const ICPConfig& config = ICPConfig());
+// returns moving in fixed
+ICPResult match_kdtree(const TreeNode& fixed, const std::vector<Vec3>& moving,
+                       const PoseType& initial_guess = PoseType::Identity(),
+                       const ICPConfig& config = ICPConfig());
 
 }  // namespace fodom

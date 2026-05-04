@@ -8,9 +8,9 @@ import os
 
 
 def generate_launch_description():
-    pkg_dir = get_package_share_directory("odom_ros")
-    config = os.path.join(pkg_dir, "config", "odom_ros.yaml")
-    rviz_config = os.path.join(pkg_dir, "config", "odom_rviz.rviz")
+    pkg_dir = get_package_share_directory("fodom_ros")
+    config = os.path.join(pkg_dir, "config", "fodom_ros.yaml")
+    rviz_config = os.path.join(pkg_dir, "config", "fodom_rviz.rviz")
 
     use_rviz_arg = DeclareLaunchArgument(
         "use_rviz", default_value="false", description="Launch RViz2"
@@ -21,11 +21,14 @@ def generate_launch_description():
     )
 
     odom_node = Node(
-        package="odom_ros",
-        executable="odom_ros_node",
-        name="odom_ros_node",
+        package="fodom_ros",
+        executable="fodom_ros_node",
+        name="fodom_ros_node",
         parameters=[LaunchConfiguration("config")],
-        remappings=[("points", "/ouster/points")],
+        remappings=[
+            ("points", "/ouster/points"),
+            ("imu", "/ouster/imu"),
+        ],
         output="screen",
     )
 

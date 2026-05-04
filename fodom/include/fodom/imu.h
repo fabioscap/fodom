@@ -45,7 +45,7 @@ struct Ekf {
   Ekf(EkfConfig& cfg) : config(cfg) {}
 
   const EkfState& step(double stamp, const ImuMeasurement& imu);
-  void update_pose(const PoseType& pose);
+  void update_pose(const PoseType& pose, double stamp);
   PoseType pose() const;
 
   EkfState state;

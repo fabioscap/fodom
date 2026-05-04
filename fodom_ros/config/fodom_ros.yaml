@@ -2,7 +2,7 @@ fodom_ros_node:
   ros__parameters:
     # Frames
     odom_frame: "odom"
-    sensor_frame: "os_lidar"
+    sensor_frame: "os_sensor"
 
     # Publishing toggles
     publish_tf: true
@@ -27,3 +27,25 @@ fodom_ros_node:
 
     # Keyframe policy
     keyframe_min_ratio: 0.3
+
+    # EKF noise parameters
+    ekf.accel_noise:   0.1      # [m/s^2]   accelerometer white noise density
+    ekf.gyro_noise:    0.01     # [rad/s]   gyroscope white noise density
+    ekf.accel_bias_rw: 1.0e-4   # [m/s^3]   accelerometer bias random walk
+    ekf.gyro_bias_rw:  1.0e-5   # [rad/s^2] gyroscope bias random walk
+    ekf.pos_noise:     0.05     # [m]       position measurement noise
+    ekf.rot_noise:     0.01     # [rad]     rotation measurement noise
+
+    # EKF stillness detection (use imu_noise_calib to tune these)
+    ekf.calib_samples:  200
+    ekf.still_window:   0.5
+    ekf.still_accel_var: 0.00164009
+    ekf.still_gyro_var:  1.28531e-06
+    ekf.still_accel_thr: 0.108171
+    ekf.still_gyro_thr:  0.0257203
+
+    # IMU-in-LiDAR extrinsics (row-major 4x4 homogeneous transform)
+    imu_in_lidar: [1.0, 0.0, 0.0, -0.002,
+                   0.0, 1.0, 0.0, -0.010,
+                   0.0, 0.0, 1.0,  0.008,
+                   0.0, 0.0, 0.0, 1.0]

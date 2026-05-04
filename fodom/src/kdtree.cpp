@@ -79,9 +79,8 @@ const TreeNode& TreeNode::nn_exact(const Vec3& point) const {
   return d_left < d_right ? best_left : best_right;
 }
 
-ICPResult match_point_cloud(const TreeNode& fixed, const PCloudType& moving,
-                            const PoseType& initial_guess,
-                            const ICPConfig& config) {
+ICPResult match_kdtree(const TreeNode& fixed, const std::vector<Vec3>& moving,
+                      const PoseType& initial_guess, const ICPConfig& config) {
   PoseType X{initial_guess};
 
   Eigen::Matrix<Scalar, 6, 6> H;
@@ -96,7 +95,7 @@ ICPResult match_point_cloud(const TreeNode& fixed, const PCloudType& moving,
     b.setZero();
 
     for (const auto& point : moving) {
-      const Vec3 point_transformed = X * point.xyz;
+      const Vec3 point_transformed = X * point;
       const auto& best_leaf = fixed.nn_fast(point_transformed);
 
       if ((point_transformed - best_leaf.mean).squaredNorm() > max_dist_sq)
@@ -109,7 +108,7 @@ ICPResult match_point_cloud(const TreeNode& fixed, const PCloudType& moving,
 
       Eigen::Matrix<Scalar, 1, 6> J;
       J << best_leaf.normal.transpose(),
-          -best_leaf.normal.transpose() * X.linear() * skew(point.xyz);
+          -best_leaf.normal.transpose() * X.linear() * skew(point);
 
       b += J.transpose() * error;
       H += J.transpose() * J;
