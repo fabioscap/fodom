@@ -9,6 +9,8 @@ using Mat12 = Eigen::Matrix<Scalar, 12, 12>;
 using Mat15 = Eigen::Matrix<Scalar, 15, 15>;
 using Vec6 = Eigen::Matrix<Scalar, 6, 1>;
 using Vec15 = Eigen::Matrix<Scalar, 15, 1>;
+using Mat3x15 = Eigen::Matrix<Scalar, 3, 15>;
+using Mat15x3 = Eigen::Matrix<Scalar, 15, 3>;
 using Mat6x15 = Eigen::Matrix<Scalar, 6, 15>;
 using Mat15x6 = Eigen::Matrix<Scalar, 15, 6>;
 using Mat15x12 = Eigen::Matrix<Scalar, 15, 12>;
@@ -27,6 +29,15 @@ void Ekf::init_from_calib() {
   state.rotation = Eigen::Quaterniond::FromTwoVectors(
                        mean_accel.normalized(), (-config.gravity).normalized())
                        .toRotationMatrix();
+
+  // set covariances
+  state.P.setIdentity();
+  state.P.block<3, 3>(0, 0) *= 1e-3;
+  state.P.block<3, 3>(3, 3) *= 1e-3;
+  state.P.block<3, 3>(6, 6) *= 1e-3;
+  state.P.block<3, 3>(9, 9) *= 1e-3;
+  state.P.block<3, 3>(12, 12) *= 1e-12;  // should be pretty correct
+
   status = EkfStatus::Running;
 }
 
@@ -83,7 +94,9 @@ const EkfState& Ekf::step(double stamp, const ImuMeasurement& imu) {
     }
   } else if (status == EkfStatus::Running) {
     predict(imu, stamp);
+    if (config.do_zupt and is_stationary) zupt();
   }
+
   return state;
 }
 
@@ -156,6 +169,31 @@ void Ekf::update_pose(const PoseType& pose, double stamp) {
   state.P = I_KH * state.P * I_KH.transpose() + K * R_meas * K.transpose();
 
   last_stamp = stamp;
+}
+
+void Ekf::zupt() {
+  if (status != EkfStatus::Running) return;
+
+  Mat3x15 H = Mat3x15::Zero();
+  H.block<3, 3>(0, 3) = Mat3::Identity();
+
+  Mat3 R_meas = (config.pos_noise * config.pos_noise) * Mat3::Identity();
+
+  Vec3 z;
+  z.head<3>() = -state.velocity;
+
+  const Mat3 S = H * state.P * H.transpose() + R_meas;
+  const Mat15x3 K = state.P * H.transpose() * S.inverse();
+
+  const Vec15 dx = K * z;
+  state.position += dx.segment<3>(0);
+  state.velocity += dx.segment<3>(3);
+  state.rotation = normalize_so3(state.rotation * exp_so3(dx.segment<3>(6)));
+  state.accel_bias += dx.segment<3>(9);
+  state.gyro_bias += dx.segment<3>(12);
+
+  const Mat15 I_KH = Mat15::Identity() - K * H;
+  state.P = I_KH * state.P * I_KH.transpose() + K * R_meas * K.transpose();
 }
 
 PoseType Ekf::pose() const {

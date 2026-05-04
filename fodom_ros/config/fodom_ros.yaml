@@ -29,12 +29,12 @@ fodom_ros_node:
     keyframe_min_ratio: 0.3
 
     # EKF noise parameters
-    ekf.accel_noise:   0.1      # [m/s^2]   accelerometer white noise density
+    ekf.accel_noise:   0.6      # [m/s^2]   accelerometer white noise density
     ekf.gyro_noise:    0.01     # [rad/s]   gyroscope white noise density
     ekf.accel_bias_rw: 1.0e-4   # [m/s^3]   accelerometer bias random walk
-    ekf.gyro_bias_rw:  1.0e-5   # [rad/s^2] gyroscope bias random walk
-    ekf.pos_noise:     0.05     # [m]       position measurement noise
-    ekf.rot_noise:     0.01     # [rad]     rotation measurement noise
+    ekf.gyro_bias_rw:  1.0e-6   # [rad/s^2] gyroscope bias random walk
+    ekf.pos_noise:     0.2     # [m]       position measurement noise
+    ekf.rot_noise:     0.1     # [rad]     rotation measurement noise
 
     # EKF stillness detection (use imu_noise_calib to tune these)
     ekf.calib_samples:  200

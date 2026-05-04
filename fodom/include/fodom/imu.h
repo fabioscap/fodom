@@ -30,6 +30,9 @@ struct EkfConfig {
   Scalar still_gyro_var = 1e-4;   // [rad²/s²] max gyro variance
   Scalar still_accel_thr = 0.5;   // [m/s²]  max deviation of mean |a| from |g|
   Scalar still_gyro_thr = 0.05;   // [rad/s] max mean gyro magnitude
+
+  bool do_zupt = false;
+  Scalar zupt_noise = 1e-4;
 };
 
 struct EkfState {
@@ -58,6 +61,7 @@ struct Ekf {
   void update_stillness(const ImuMeasurement& imu, double stamp);
   void predict(const ImuMeasurement& imu, double stamp);
   void init_from_calib();
+  void zupt();
 
   std::vector<Vec3> calib_accels;
   std::vector<Vec3> calib_gyros;
