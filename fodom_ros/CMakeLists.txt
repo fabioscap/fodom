@@ -10,6 +10,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 find_package(Eigen3 REQUIRED)
+find_package(fodom REQUIRED)
 
 find_package(ament_cmake REQUIRED)
 
@@ -35,15 +36,23 @@ ament_target_dependencies(fodom_ros_components PUBLIC
   nav_msgs
 )
 
+target_link_libraries(fodom_ros_components PUBLIC fodom::fodom)
+
 target_include_directories(fodom_ros_components PUBLIC
 	"$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
 	"$<INSTALL_INTERFACE:include/${PROJECT_NAME}>")
 
 rclcpp_components_register_node(
   fodom_ros_components
-  PLUGIN "fodom_ros::fodomROS"
+  PLUGIN "fodom_ros::FodomROS"
   EXECUTABLE fodom_ros_node
 )
+
+add_executable(imu_noise_calib src/imu_noise_calib.cpp)
+ament_target_dependencies(imu_noise_calib rclcpp sensor_msgs)
+target_link_libraries(imu_noise_calib Eigen3::Eigen)
+
+install(TARGETS imu_noise_calib DESTINATION lib/${PROJECT_NAME})
 
 install(
   TARGETS fodom_ros_components
