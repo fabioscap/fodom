@@ -33,24 +33,24 @@ void Odom::feed_cloud(double stamp, PCloudType& cloud) {
   if (last_scan_stamp >= 0) traj.emplace_back(last_scan_stamp, ekf.pose());
 
   const double scan_dt = 0.1;
-
-  while (!imu_buf.empty() && imu_buf.front().first <= stamp + scan_dt) {
+  const double scan_end_time = stamp + scan_dt;
+  while (!imu_buf.empty() && imu_buf.front().first <= scan_end_time) {
     const auto [imu_stamp, imu] = imu_buf.front();
     ekf.step(imu_stamp, imu);
     traj.emplace_back(imu_stamp, ekf.pose());
     imu_buf.pop_front();
   }
-  last_scan_stamp = stamp;
+  // track the time the EKF was actually integrated to, not the header stamp
+  last_scan_stamp = traj.empty() ? stamp : traj.back().first;
 
   if (ekf.status == EkfStatus::Calibrating) return;
 
-  // deskew: transform each point to the scan-start reference frame
-  double t_abs = 0.0;
+  // deskew: bring all points into the lidar frame at scan end (traj.back())
   if (traj.size() >= 2) {
     const PoseType T_I_L = config.imu_in_lidar.inverse();
-    const PoseType T_W_L_ref = interp_pose(traj, stamp) * T_I_L;
+    const PoseType T_W_L_ref = traj.back().second * T_I_L;
     for (auto& p : cloud) {
-      t_abs = stamp + static_cast<double>(p.nsec) * 1e-9;
+      const double t_abs = stamp + static_cast<double>(p.nsec) * 1e-9;
       const PoseType T_deskew =
           T_W_L_ref.inverse() * interp_pose(traj, t_abs) * T_I_L;
       p.xyz = T_deskew * p.xyz;
@@ -71,10 +71,33 @@ void Odom::feed_cloud(double stamp, PCloudType& cloud) {
     const PoseType lidar_in_imu = config.imu_in_lidar.inverse();
 
     const PoseType lidar_kf_in_world = keyframe_pose * lidar_in_imu;
-    const PoseType lidar_curr_in_world = ekf.pose() * lidar_in_imu;
-    const PoseType init_guess =
-        lidar_kf_in_world.inverse() * lidar_curr_in_world;
 
+    const Scalar max_dist_sq =
+        config.icp.max_correspondence_dist * config.icp.max_correspondence_dist;
+
+    // point corrections
+    PoseType init_guess;
+    for (const Vec3& point : leaves) {
+      // TODO do not recompute the same thing many times
+      const PoseType lidar_curr_in_world = ekf.pose() * lidar_in_imu;
+      const PoseType init_guess =
+          lidar_kf_in_world.inverse() * lidar_curr_in_world;
+      const Vec3 transformed_point = init_guess * point;
+
+      const TreeNode& matched_leaf = keyframe->nn_fast(transformed_point);
+
+      if ((transformed_point - matched_leaf.mean).squaredNorm() > max_dist_sq)
+        continue;
+
+      // bring everything to world coordinates as to have easier jacobians
+      const PoseType T_offset = config.imu_in_lidar * keyframe_pose;
+      const Vec3 n = T_offset.linear().transpose() * matched_leaf.normal;
+      const Vec3 mu = T_offset.inverse() * matched_leaf.mean;
+      const Vec3 p_world = lidar_curr_in_world * point;
+      ekf.upate_point(p_world, mu, n);
+    }
+
+    // full cloud correction
     auto result = match_kdtree(*keyframe, leaves, init_guess, config.icp);
 
     PoseType& T_icp = result.pose;
@@ -89,7 +112,7 @@ void Odom::feed_cloud(double stamp, PCloudType& cloud) {
       keyframe_pose = updated_pose;
     }
 
-    ekf.update_pose(updated_pose, t_abs);
+    ekf.update_pose(updated_pose, scan_end_time);
 
     // compute prediction error for debugging purposes
     const PoseType pred_error = init_guess.inverse() * T_icp;
@@ -105,6 +128,7 @@ void Odom::feed_cloud(double stamp, PCloudType& cloud) {
     std::cerr << "EKF   velocity: " << ekf.state.velocity.norm() << "\n";
     std::cerr << "EKF  gyro_bias: " << ekf.state.gyro_bias.norm() << "\n";
     std::cerr << "EKF accel_bias: " << ekf.state.accel_bias.norm() << "\n";
+    std::cerr << "match ratio   : " << result.ratio << "\n";
   }
 }
 

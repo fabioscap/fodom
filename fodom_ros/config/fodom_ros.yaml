@@ -21,12 +21,15 @@ fodom_ros_node:
     max_parallel_level: 4
 
     # ICP
-    icp_n_iters: 10
+    icp_n_iters: 20
     icp_damping: 0.0
-    icp_max_correspondence_dist: 0.2 # [m] reject matches beyond this
+    icp_max_correspondence_dist: 0.1 # [m] reject matches beyond this
 
     # Keyframe policy
     keyframe_min_ratio: 0.3
+
+    # EKF gravity vector [m/s^2] (world frame, typically [0, 0, -9.81] for ENU)
+    ekf.gravity: [0.0, 0.0, -9.80]
 
     # EKF noise parameters
     ekf.accel_noise:   0.6      # [m/s^2]   accelerometer white noise density
@@ -43,6 +46,17 @@ fodom_ros_node:
     ekf.still_gyro_var:  1.28531e-06
     ekf.still_accel_thr: 0.108171
     ekf.still_gyro_thr:  0.0257203
+
+    # EKF ZUPT (zero-velocity update when stationary)
+    ekf.do_zupt:    true
+    ekf.zupt_noise: 1.0e-4   # [m/s] velocity measurement noise when still
+
+    # EKF initial covariances (diagonal variances after calibration)
+    ekf.init_pos_var:        1.0e-3
+    ekf.init_vel_var:        1.0e-3
+    ekf.init_rot_var:        1.0e-3
+    ekf.init_accel_bias_var: 1.0e-3
+    ekf.init_gyro_bias_var:  1.0e-6
 
     # IMU-in-LiDAR extrinsics (row-major 4x4 homogeneous transform)
     imu_in_lidar: [1.0, 0.0, 0.0, -0.002,

@@ -21,6 +21,7 @@ struct EkfConfig {
   Scalar gyro_bias_rw = 1e-5;
   Scalar pos_noise = 0.05;
   Scalar rot_noise = 0.01;
+  Scalar point_noise = 0.02;
   Vec3 gravity{0.0, 0.0, -9.81};
 
   size_t calib_samples = 200;
@@ -33,6 +34,13 @@ struct EkfConfig {
 
   bool do_zupt = false;
   Scalar zupt_noise = 1e-4;
+
+  // initial diagonal variances for P after calibration
+  Scalar init_pos_var = 1e-3;
+  Scalar init_vel_var = 1e-3;
+  Scalar init_rot_var = 1e-3;
+  Scalar init_accel_bias_var = 1e-3;
+  Scalar init_gyro_bias_var = 1e-6;
 };
 
 struct EkfState {
@@ -49,6 +57,9 @@ struct Ekf {
 
   const EkfState& step(double stamp, const ImuMeasurement& imu);
   void update_pose(const PoseType& pose, double stamp);
+
+  void upate_point(const Vec3& point_transformed, const Vec3& mu,
+                   const Vec3& n);
   PoseType pose() const;
 
   EkfState state;

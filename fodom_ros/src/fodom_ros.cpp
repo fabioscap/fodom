@@ -211,6 +211,15 @@ void FodomROS::init_params() {
   ekf.still_gyro_var = declare_parameter("ekf.still_gyro_var", 1e-4);
   ekf.still_accel_thr = declare_parameter("ekf.still_accel_thr", 0.5);
   ekf.still_gyro_thr = declare_parameter("ekf.still_gyro_thr", 0.05);
+  ekf.do_zupt = declare_parameter("ekf.do_zupt", false);
+  ekf.zupt_noise = declare_parameter("ekf.zupt_noise", 1e-4);
+  ekf.init_pos_var = declare_parameter("ekf.init_pos_var", 1e-3);
+  ekf.init_vel_var = declare_parameter("ekf.init_vel_var", 1e-3);
+  ekf.init_rot_var = declare_parameter("ekf.init_rot_var", 1e-3);
+  ekf.init_accel_bias_var = declare_parameter("ekf.init_accel_bias_var", 1e-3);
+  ekf.init_gyro_bias_var = declare_parameter("ekf.init_gyro_bias_var", 1e-6);
+  const auto g = declare_parameter("ekf.gravity", std::vector<double>{0.0, 0.0, -9.81});
+  ekf.gravity = fodom::Vec3(g[0], g[1], g[2]);
 
   // row-major 4x4 homogeneous transform
   const auto m = declare_parameter(
