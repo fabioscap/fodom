@@ -58,8 +58,9 @@ struct Ekf {
   const EkfState& step(double stamp, const ImuMeasurement& imu);
   void update_pose(const PoseType& pose, double stamp);
 
-  void upate_point(const Vec3& point_transformed, const Vec3& mu,
-                   const Vec3& n);
+  // Omega and b are the pre-weighted information matrix/vector: Omega = Σ wᵢ·HᵢᵀHᵢ, b = Σ wᵢ·Hᵢᵀzᵢ
+  void update_points(const Eigen::Matrix<Scalar, 15, 15>& Omega,
+                     const Eigen::Matrix<Scalar, 15, 1>& b);
   PoseType pose() const;
 
   EkfState state;

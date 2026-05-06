@@ -1,9 +1,13 @@
 #include "fodom/odom.h"
 
 #include <algorithm>
+#include <thread>
 #include <iostream>
 
 namespace fodom {
+
+using Mat15 = Eigen::Matrix<Scalar, 15, 15>;
+using Vec15 = Eigen::Matrix<Scalar, 15, 1>;
 
 void Odom::feed_imu(double stamp, const ImuMeasurement& imu) {
   imu_buf.push_back({stamp, imu});
@@ -28,6 +32,51 @@ static PoseType interp_pose(
   return out;
 }
 
+struct KfContrib {
+  Mat15 H = Mat15::Zero();
+  Vec15 b = Vec15::Zero();
+  int valid = 0;
+};
+
+static KfContrib accumulate_keyframe(const TreeNode& kf_tree,
+                                     const PoseType& kf_lidar_in_world,
+                                     const std::vector<Vec3>& leaves,
+                                     const PoseType& curr_lidar_in_world,
+                                     const Vec3& imu_pos, const Mat3& imu_rot,
+                                     Scalar inv_var, Scalar max_dist_sq) {
+  const PoseType curr_to_kf = kf_lidar_in_world.inverse() * curr_lidar_in_world;
+
+  KfContrib result;
+  for (int i = 0; i < static_cast<int>(leaves.size()); ++i) {
+    const Vec3& point = leaves[i];
+    const Vec3 point_in_kf = curr_to_kf * point;
+    const TreeNode& matched = kf_tree.nn_plane(point_in_kf);
+    if ((point_in_kf - matched.mean).squaredNorm() > max_dist_sq) continue;
+
+    const Vec3 n_world = kf_lidar_in_world.linear() * matched.normal;
+    const Vec3 mu_world = kf_lidar_in_world * matched.mean;
+    const Vec3 p_world = curr_lidar_in_world * point;
+
+    Eigen::Matrix<Scalar, 1, 15> J;
+    J.block<1, 3>(0, 0) = n_world.transpose();
+    J.block<1, 3>(0, 3).setZero();
+    J.block<1, 3>(0, 6) =
+        -n_world.transpose() * skew(p_world - imu_pos) * imu_rot;
+    J.block<1, 6>(0, 9).setZero();
+    const Scalar z = n_world.dot(mu_world - p_world);
+
+    const Scalar cos_inc =
+        std::abs(n_world.dot((p_world - imu_pos).normalized()));
+    const Scalar range_sq = point.squaredNorm();
+    const Scalar w = inv_var * cos_inc / (range_sq + 1e-6);
+
+    result.H += w * J.transpose() * J;
+    result.b += w * J.transpose() * z;
+    ++result.valid;
+  }
+  return result;
+}
+
 void Odom::feed_cloud(double stamp, PCloudType& cloud) {
   traj.clear();
   if (last_scan_stamp >= 0) traj.emplace_back(last_scan_stamp, ekf.pose());
@@ -40,12 +89,10 @@ void Odom::feed_cloud(double stamp, PCloudType& cloud) {
     traj.emplace_back(imu_stamp, ekf.pose());
     imu_buf.pop_front();
   }
-  // track the time the EKF was actually integrated to, not the header stamp
   last_scan_stamp = traj.empty() ? stamp : traj.back().first;
 
   if (ekf.status == EkfStatus::Calibrating) return;
 
-  // deskew: bring all points into the lidar frame at scan end (traj.back())
   if (traj.size() >= 2) {
     const PoseType T_I_L = config.imu_in_lidar.inverse();
     const PoseType T_W_L_ref = traj.back().second * T_I_L;
@@ -57,79 +104,64 @@ void Odom::feed_cloud(double stamp, PCloudType& cloud) {
     }
   }
 
-  if (!keyframe) {
-    keyframe =
-        std::make_unique<TreeNode>(cloud.begin(), cloud.end(), config.kdtree);
-    keyframe_pose = ekf.pose();
+  auto tree =
+      std::make_unique<TreeNode>(cloud.begin(), cloud.end(), config.kdtree);
+
+  if (keyframes.empty()) {
+    keyframes.push_back({std::move(tree), ekf.pose()});
     return;
-  } else {
-    auto tree =
-        std::make_unique<TreeNode>(cloud.begin(), cloud.end(), config.kdtree);
-    std::vector<Vec3> leaves;
-    get_leaves(*tree, leaves);
-
-    const PoseType lidar_in_imu = config.imu_in_lidar.inverse();
-
-    const PoseType lidar_kf_in_world = keyframe_pose * lidar_in_imu;
-
-    const Scalar max_dist_sq =
-        config.icp.max_correspondence_dist * config.icp.max_correspondence_dist;
-
-    // point corrections
-    PoseType init_guess;
-    for (const Vec3& point : leaves) {
-      // TODO do not recompute the same thing many times
-      const PoseType lidar_curr_in_world = ekf.pose() * lidar_in_imu;
-      const PoseType init_guess =
-          lidar_kf_in_world.inverse() * lidar_curr_in_world;
-      const Vec3 transformed_point = init_guess * point;
-
-      const TreeNode& matched_leaf = keyframe->nn_fast(transformed_point);
-
-      if ((transformed_point - matched_leaf.mean).squaredNorm() > max_dist_sq)
-        continue;
-
-      // bring everything to world coordinates as to have easier jacobians
-      const PoseType T_offset = config.imu_in_lidar * keyframe_pose;
-      const Vec3 n = T_offset.linear().transpose() * matched_leaf.normal;
-      const Vec3 mu = T_offset.inverse() * matched_leaf.mean;
-      const Vec3 p_world = lidar_curr_in_world * point;
-      ekf.upate_point(p_world, mu, n);
-    }
-
-    // full cloud correction
-    auto result = match_kdtree(*keyframe, leaves, init_guess, config.icp);
-
-    PoseType& T_icp = result.pose;
-
-    const PoseType updated_pose =
-        keyframe_pose * lidar_in_imu * T_icp * config.imu_in_lidar;
-
-    if (result.ratio < config.kf_ratio) {
-      std::cerr << "Keyframe!\n";
-      // spawn new keyframe
-      keyframe = std::move(tree);
-      keyframe_pose = updated_pose;
-    }
-
-    ekf.update_pose(updated_pose, scan_end_time);
-
-    // compute prediction error for debugging purposes
-    const PoseType pred_error = init_guess.inverse() * T_icp;
-    Scalar t_err = pred_error.translation().norm();
-    Scalar r_err = log_so3(pred_error.linear()).norm();
-    std::cerr << "prediction error: " << " t_err: " << t_err
-              << " r_err: " << r_err << "\n";
-    const PoseType corr_error = ekf.pose().inverse() * updated_pose;
-    t_err = corr_error.translation().norm();
-    r_err = log_so3(corr_error.linear()).norm();
-    std::cerr << "error after corr: " << " t_err: " << t_err
-              << " r_err: " << r_err << "\n";
-    std::cerr << "EKF   velocity: " << ekf.state.velocity.norm() << "\n";
-    std::cerr << "EKF  gyro_bias: " << ekf.state.gyro_bias.norm() << "\n";
-    std::cerr << "EKF accel_bias: " << ekf.state.accel_bias.norm() << "\n";
-    std::cerr << "match ratio   : " << result.ratio << "\n";
   }
+
+  std::vector<Vec3> leaves;
+  get_leaves(*tree, leaves);
+
+  const PoseType lidar_in_imu = config.imu_in_lidar.inverse();
+  const Scalar max_dist_sq =
+      config.icp.max_correspondence_dist * config.icp.max_correspondence_dist;
+  const Scalar inv_var =
+      1.0 / (ekf.config.point_noise * ekf.config.point_noise);
+  const int max_pts = static_cast<int>(leaves.size() * keyframes.size());
+
+  int valid = 0;
+  for (int iter = 0; iter < static_cast<int>(config.icp.n_iters); ++iter) {
+    const PoseType lidar_curr_in_world = ekf.pose() * lidar_in_imu;
+
+    std::vector<KfContrib> contribs(keyframes.size());
+    std::vector<std::thread> threads;
+    threads.reserve(keyframes.size());
+    for (size_t k = 0; k < keyframes.size(); ++k) {
+      const PoseType kf_lidar_in_world = keyframes[k].pose * lidar_in_imu;
+      threads.emplace_back([&, k, kf_lidar_in_world]() {
+        contribs[k] = accumulate_keyframe(
+            *keyframes[k].tree, kf_lidar_in_world, leaves, lidar_curr_in_world,
+            ekf.state.position, ekf.state.rotation, inv_var, max_dist_sq);
+      });
+    }
+    for (auto& t : threads) t.join();
+
+    Mat15 H = Mat15::Zero();
+    Vec15 b = Vec15::Zero();
+    valid = 0;
+    for (const auto& c : contribs) { H += c.H; b += c.b; valid += c.valid; }
+
+    if (valid == 0) break;
+    ekf.update_points(H, b);
+  }
+
+  const Scalar ratio =
+      static_cast<Scalar>(valid) / static_cast<Scalar>(max_pts);
+  if (ratio < config.kf_ratio) {
+    keyframes.push_back({std::move(tree), ekf.pose()});
+    if (keyframes.size() > config.max_keyframes) keyframes.pop_front();
+    std::cerr << "Keyframe! (" << keyframes.size() << "/"
+              << config.max_keyframes << ")\n";
+  }
+
+  std::cerr << "valid: " << valid << "/" << max_pts << "  ratio: " << ratio
+            << "\n";
+  std::cerr << "velocity: " << ekf.state.velocity.norm()
+            << "  gyro_bias: " << ekf.state.gyro_bias.norm()
+            << "  accel_bias: " << ekf.state.accel_bias.norm() << "\n";
 }
 
 }  // namespace fodom

@@ -186,7 +186,6 @@ static void ekf_update(EkfState& state, const Eigen::Matrix<Scalar, N, 15>& H,
   ekf_update(state, H, z, R, n_iters);
 }
 
-
 void Ekf::update_pose(const PoseType& pose, double stamp) {
   if (status != EkfStatus::Running) return;
 
@@ -206,20 +205,18 @@ void Ekf::update_pose(const PoseType& pose, double stamp) {
   last_stamp = stamp;
 }
 
-void Ekf::upate_point(const Vec3& point, const Vec3& mu, const Vec3& n) {
+void Ekf::update_points(const Mat15& H, const Vec15& b) {
   if (status != EkfStatus::Running) return;
 
-  Eigen::Matrix<Scalar, 1, 1> z{n.dot(mu) - n.dot(point) -
-                                n.dot(state.position)};
+  const Eigen::LDLT<Mat15> ldlt(state.P.inverse() + H);
+  const Vec15 dx = ldlt.solve(b);
 
-  Eigen::Matrix<Scalar, 1, 1> R_mat{config.point_noise * config.point_noise};
-
-  Eigen::Matrix<Scalar, 1, 15> H;
-  H << n.transpose(), Vec3::Zero().transpose(),
-      -n.transpose() * state.rotation * skew(point), Vec3::Zero().transpose(),
-      Vec3::Zero().transpose();
-
-  ekf_update<1>(state, H, z, R_mat, 1);
+  state.position += dx.segment<3>(0);
+  state.velocity += dx.segment<3>(3);
+  state.rotation = normalize_so3(state.rotation * exp_so3(dx.segment<3>(6)));
+  state.accel_bias += dx.segment<3>(9);
+  state.gyro_bias += dx.segment<3>(12);
+  state.P = ldlt.solve(Mat15::Identity());
 }
 
 void Ekf::zupt() {

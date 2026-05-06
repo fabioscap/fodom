@@ -16,17 +16,20 @@ fodom_ros_node:
     min_intensity: 1300
 
     # KD-tree
-    max_points_per_leaf: 20
-    max_depth: 16
-    max_parallel_level: 4
+    kdtree.max_points_per_leaf: 10
+    kdtree.max_depth: 32
+    kdtree.max_parallel_level: 4
+    kdtree.leaf_extent_sq: 0.01   # [m²] min largest eigenvalue to allow splitting (~0.2m patch extent)
+    kdtree.planar_ratio: 0.2      # λ_min/λ_max threshold for planarity
 
     # ICP
-    icp_n_iters: 20
-    icp_damping: 0.0
-    icp_max_correspondence_dist: 0.1 # [m] reject matches beyond this
+    icp.n_iters: 20
+    icp.damping: 1.0
+    icp.max_correspondence_dist: 0.1 # [m] reject matches beyond this
 
     # Keyframe policy
     keyframe_min_ratio: 0.3
+    max_keyframes: 4
 
     # EKF gravity vector [m/s^2] (world frame, typically [0, 0, -9.81] for ENU)
     ekf.gravity: [0.0, 0.0, -9.80]

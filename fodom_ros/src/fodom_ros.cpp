@@ -69,13 +69,13 @@ void FodomROS::pc_cb(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
   const auto t1 = std::chrono::high_resolution_clock::now();
   const double stamp = rclcpp::Time(msg->header.stamp).seconds();
 
-  const auto* kf_before = odom_.keyframe.get();
+  const size_t n_kf_before = odom_.keyframes.size();
   odom_.feed_cloud(stamp, cloud_);
-  const bool new_keyframe = odom_.keyframe.get() != kf_before;
+  const bool new_keyframe = odom_.keyframes.size() != n_kf_before;
 
   const auto t2 = std::chrono::high_resolution_clock::now();
 
-  if (!odom_.keyframe) return;
+  if (odom_.keyframes.empty()) return;
 
   const fodom::PoseType pose =
       odom_.ekf.pose() * odom_.config.imu_in_lidar.inverse();
@@ -129,9 +129,9 @@ void FodomROS::pc_cb(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     path_pub_->publish(path_msg_);
   }
 
-  if (publish_keyframe_ && new_keyframe && odom_.keyframe) {
+  if (publish_keyframe_ && new_keyframe && !odom_.keyframes.empty()) {
     std::vector<fodom::Vec3> leaves;
-    fodom::get_leaves(*odom_.keyframe, leaves);
+    fodom::get_leaves(*odom_.keyframes.back().tree, leaves);
 
     sensor_msgs::msg::PointCloud2 kf_msg;
     kf_msg.header.stamp = rclcpp::Time(0);
@@ -150,7 +150,7 @@ void FodomROS::pc_cb(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     sensor_msgs::PointCloud2Iterator<float> z_out(kf_msg, "z");
     for (const auto& p : leaves) {
       const fodom::Vec3 pw =
-          odom_.keyframe_pose * odom_.config.imu_in_lidar.inverse() * p;
+          odom_.keyframes.back().pose * odom_.config.imu_in_lidar.inverse() * p;
       *x_out = static_cast<float>(pw.x());
       *y_out = static_cast<float>(pw.y());
       *z_out = static_cast<float>(pw.z());
@@ -183,19 +183,25 @@ void FodomROS::init_params() {
   publish_keyframe_ = declare_parameter("publish_keyframe", false);
 
   odom_.config.kdtree.max_points_per_leaf =
-      static_cast<size_t>(declare_parameter("max_points_per_leaf", 20));
+      static_cast<size_t>(declare_parameter("kdtree.max_points_per_leaf", 20));
   odom_.config.kdtree.max_depth =
-      static_cast<size_t>(declare_parameter("max_depth", 16));
+      static_cast<size_t>(declare_parameter("kdtree.max_depth", 16));
   odom_.config.kdtree.max_parallel_level =
-      static_cast<size_t>(declare_parameter("max_parallel_level", 3));
+      static_cast<size_t>(declare_parameter("kdtree.max_parallel_level", 3));
+  odom_.config.kdtree.leaf_extent_sq =
+      declare_parameter("kdtree.leaf_extent_sq", 0.04);
+  odom_.config.kdtree.planar_ratio =
+      declare_parameter("kdtree.planar_ratio", 0.1);
 
   odom_.config.icp.n_iters =
-      static_cast<size_t>(declare_parameter("icp_n_iters", 10));
-  odom_.config.icp.damping = declare_parameter("icp_damping", 0.0);
+      static_cast<size_t>(declare_parameter("icp.n_iters", 10));
+  odom_.config.icp.damping = declare_parameter("icp.damping", 0.0);
   odom_.config.icp.max_correspondence_dist =
-      declare_parameter("icp_max_correspondence_dist", 1.0);
+      declare_parameter("icp.max_correspondence_dist", 1.0);
 
   odom_.config.kf_ratio = declare_parameter("keyframe_min_ratio", 0.3);
+  odom_.config.max_keyframes =
+      static_cast<size_t>(declare_parameter("max_keyframes", 4));
 
   auto& ekf = odom_.ekf.config;
   ekf.accel_noise = declare_parameter("ekf.accel_noise", 0.1);

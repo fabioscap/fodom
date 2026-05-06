@@ -15,6 +15,9 @@ using PCloudType = std::vector<PointType>;
 
 struct KdTreeConfig {
   size_t max_points_per_leaf = 20;
+  Scalar planar_ratio = 0.1;
+  Scalar leaf_extent_sq = 0.04;
+
   size_t max_depth = 16;
   size_t max_parallel_level = 3;
 };
@@ -25,15 +28,21 @@ struct TreeNode {
   Vec3 split_plane;
 
   size_t num_points;
+  Scalar planarity{1.0};  // λ_min/λ_max, lower = more planar
 
   std::unique_ptr<TreeNode> left;
   std::unique_ptr<TreeNode> right;
 
   TreeNode(PCloudType::iterator begin, PCloudType::iterator end,
-           const KdTreeConfig& config = KdTreeConfig(), size_t level = 0);
+           const KdTreeConfig& config = KdTreeConfig(), size_t level = 0,
+           const TreeNode* ppl = nullptr);
 
-  const TreeNode& nn_fast(const Vec3& point) const;
-  const TreeNode& nn_exact(const Vec3& point) const;
+  const Vec3& nn_fast(const Vec3& point) const;
+  const Vec3& nn_exact(const Vec3& point) const;
+
+  // mad-icp style plane parent
+  const TreeNode* parent_plane = nullptr;
+  const TreeNode& nn_plane(const Vec3& point) const;
 };
 
 struct ICPConfig {
