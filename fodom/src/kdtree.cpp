@@ -5,7 +5,8 @@
 namespace fodom {
 
 TreeNode::TreeNode(PCloudType::iterator begin, PCloudType::iterator end,
-                   const KdTreeConfig& config, size_t level) {
+                   const KdTreeConfig& config, size_t level,
+                   const TreeNode* ppl) {
   const size_t n = std::distance(begin, end);
   num_points = n;
 
@@ -35,29 +36,37 @@ TreeNode::TreeNode(PCloudType::iterator begin, PCloudType::iterator end,
   const size_t n_right = std::distance(mid, end);
   const size_t next_level = level + 1;
 
+  planarity = solver.eigenvalues()(0) / (solver.eigenvalues()(2) + 1e-10);
+  parent_plane = (planarity < config.planar_ratio) ? this : ppl;
+
   const bool do_split = n_left > 0 && n_right > 0 &&
                         (n_left > config.max_points_per_leaf ||
                          n_right > config.max_points_per_leaf) &&
+                        solver.eigenvalues()(2) > config.leaf_extent_sq &&
                         next_level < config.max_depth;
   if (!do_split) return;
 
   if (level < config.max_parallel_level) {
     auto build_left = [this, begin, mid, &config, next_level]() {
-      left = std::make_unique<TreeNode>(begin, mid, config, next_level);
+      left = std::make_unique<TreeNode>(begin, mid, config, next_level,
+                                        parent_plane);
     };
     std::thread leftthread(build_left);
-    right = std::make_unique<TreeNode>(mid, end, config, next_level);
+    right =
+        std::make_unique<TreeNode>(mid, end, config, next_level, parent_plane);
     leftthread.join();
   } else {
-    left = std::make_unique<TreeNode>(begin, mid, config, next_level);
-    right = std::make_unique<TreeNode>(mid, end, config, next_level);
+    left = std::make_unique<TreeNode>(begin, mid, config, next_level,
+                                      parent_plane);
+    right =
+        std::make_unique<TreeNode>(mid, end, config, next_level, parent_plane);
   }
 }
 
-const TreeNode& TreeNode::nn_fast(const Vec3& point) const {
-  if (!left && !right) return *this;
-  if (!left) return *right;
-  if (!right) return *left;
+const Vec3& TreeNode::nn_fast(const Vec3& point) const {
+  if (!left && !right) return mean;
+  if (!left) return right->mean;
+  if (!right) return left->mean;
 
   if ((point - mean).dot(split_plane) < 0)
     return left->nn_fast(point);
@@ -65,22 +74,34 @@ const TreeNode& TreeNode::nn_fast(const Vec3& point) const {
     return right->nn_fast(point);
 }
 
-const TreeNode& TreeNode::nn_exact(const Vec3& point) const {
-  if (!left && !right) return *this;
+const Vec3& TreeNode::nn_exact(const Vec3& point) const {
+  if (!left && !right) return mean;
   if (!left) return right->nn_exact(point);
   if (!right) return left->nn_exact(point);
 
   const auto& best_left = left->nn_exact(point);
   const auto& best_right = right->nn_exact(point);
 
-  Scalar d_left = (point - best_left.mean).squaredNorm();
-  Scalar d_right = (point - best_right.mean).squaredNorm();
+  Scalar d_left = (point - best_left).squaredNorm();
+  Scalar d_right = (point - best_right).squaredNorm();
 
   return d_left < d_right ? best_left : best_right;
 }
 
+const TreeNode& TreeNode::nn_plane(const Vec3& point) const {
+  if (!left && !right)
+    return (parent_plane == this || !parent_plane) ? *this : *parent_plane;
+  if (!left) return right->nn_plane(point);
+  if (!right) return left->nn_plane(point);
+
+  if ((point - mean).dot(split_plane) < 0)
+    return left->nn_plane(point);
+  else
+    return right->nn_plane(point);
+}
+
 ICPResult match_kdtree(const TreeNode& fixed, const std::vector<Vec3>& moving,
-                      const PoseType& initial_guess, const ICPConfig& config) {
+                       const PoseType& initial_guess, const ICPConfig& config) {
   PoseType X{initial_guess};
 
   Eigen::Matrix<Scalar, 6, 6> H;
@@ -96,7 +117,7 @@ ICPResult match_kdtree(const TreeNode& fixed, const std::vector<Vec3>& moving,
 
     for (const auto& point : moving) {
       const Vec3 point_transformed = X * point;
-      const auto& best_leaf = fixed.nn_fast(point_transformed);
+      const auto& best_leaf = fixed.nn_plane(point_transformed);
 
       if ((point_transformed - best_leaf.mean).squaredNorm() > max_dist_sq)
         continue;
