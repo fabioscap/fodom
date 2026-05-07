@@ -1,18 +1,13 @@
 #pragma once
 
-#include <fodom/imu.h>
-#include <fodom/kdtree.h>
-
 #include <deque>
 #include <utility>
 
-namespace fodom {
+#include "fodom/ekf.h"
+#include "fodom/icp.h"
+#include "fodom/kdtree.h"
 
-struct IcpConfig {
-  size_t n_iters = 10;
-  Scalar max_correspondence_dist = 1.0;
-  Scalar huber_delta = 0.1;  // [m] Huber threshold on point-to-plane residual
-};
+namespace fodom {
 
 struct OdomConfig {
   Scalar kf_ratio = 0.4;

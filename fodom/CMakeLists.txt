@@ -13,7 +13,8 @@ find_package(Threads REQUIRED)
 # Single shared library — add more component sources here as the project grows
 add_library(fodom SHARED
   src/kdtree.cpp
-  src/imu.cpp
+  src/ekf.cpp
+  src/icp.cpp
   src/odom.cpp
 )
 target_include_directories(fodom PUBLIC

@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "fodom/kdtree.h"
+#include "fodom/icp.h"
 
 static fodom::PCloudType load_cloud(const std::string& path) {
   std::ifstream f(path, std::ios::binary);
@@ -44,7 +44,7 @@ struct State {
 
   std::unique_ptr<fodom::TreeNode> fixed_tree;
   fodom::KdTreeConfig kd_config;
-  fodom::MatchConfig icp_config;
+  fodom::IcpConfig icp_config;
 
   fodom::PoseType result = fodom::PoseType::Identity();
   bool has_result = false;

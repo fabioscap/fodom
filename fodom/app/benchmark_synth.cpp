@@ -6,7 +6,7 @@
 #include <random>
 #include <vector>
 
-#include "fodom/kdtree.h"
+#include "fodom/icp.h"
 
 static fodom::PCloudType generate_three_planes(size_t n_per_plane,
                                                double noise) {
@@ -120,7 +120,7 @@ int main() {
 
   auto t0 = std::chrono::high_resolution_clock::now();
 
-  fodom::MatchConfig icp_config;
+  fodom::IcpConfig icp_config;
   icp_config.n_iters = 10;
   icp_config.damping = 0;
   auto result_icp = fodom::match_point_cloud(*fixed_tree, moving_cloud,

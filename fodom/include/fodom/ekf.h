@@ -1,8 +1,10 @@
 #pragma once
 
 #include <deque>
+#include <utility>
 #include <vector>
 
+#include "fodom/kdtree.h"
 #include "fodom/math.h"
 
 namespace fodom {
@@ -26,16 +28,15 @@ struct EkfConfig {
 
   size_t calib_samples = 200;
 
-  Scalar still_window = 0.5;      // [s]    time window for variance computation
-  Scalar still_accel_var = 0.01;  // [m²/s⁴]  max accel variance (trace of cov)
-  Scalar still_gyro_var = 1e-4;   // [rad²/s²] max gyro variance
-  Scalar still_accel_thr = 0.5;   // [m/s²]  max deviation of mean |a| from |g|
-  Scalar still_gyro_thr = 0.05;   // [rad/s] max mean gyro magnitude
+  Scalar still_window = 0.5;
+  Scalar still_accel_var = 0.01;
+  Scalar still_gyro_var = 1e-4;
+  Scalar still_accel_thr = 0.5;
+  Scalar still_gyro_thr = 0.05;
 
   bool do_zupt = false;
   Scalar zupt_noise = 1e-4;
 
-  // initial diagonal variances for P after calibration
   Scalar init_pos_var = 1e-3;
   Scalar init_vel_var = 1e-3;
   Scalar init_rot_var = 1e-3;
@@ -58,8 +59,8 @@ struct Ekf {
   const EkfState& step(double stamp, const ImuMeasurement& imu);
   void update_pose(const PoseType& pose, double stamp);
 
-  // Omega and b are the pre-weighted information matrix/vector: Omega = Σ wᵢ·HᵢᵀHᵢ, b = Σ wᵢ·Hᵢᵀzᵢ
-  // Set update_cov=true only on the final IEKF iteration so P is not accumulated.
+  // Omega and b are the pre-weighted information matrix/vector.
+  // Set update_cov=true only on the final IEKF iteration.
   void update_points(const Eigen::Matrix<Scalar, 15, 15>& Omega,
                      const Eigen::Matrix<Scalar, 15, 1>& b,
                      bool update_cov = true);
@@ -86,5 +87,12 @@ struct Ekf {
   Scalar still_sumsq_a = 0.0;
   Scalar still_sumsq_g = 0.0;
 };
+
+PoseType interp_pose(const std::vector<std::pair<double, PoseType>>& traj,
+                     double t);
+
+// Motion-compensates points already in IMU frame to the scan-end IMU frame (traj.back()).
+void deskew_cloud(PCloudType& cloud, double stamp,
+                  const std::vector<std::pair<double, PoseType>>& traj);
 
 }  // namespace fodom

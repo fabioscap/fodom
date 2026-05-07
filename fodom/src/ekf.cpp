@@ -1,20 +1,16 @@
-#include "fodom/imu.h"
+#include "fodom/ekf.h"
 
+#include <algorithm>
 #include <iostream>
-
-#include "fodom/imu.h"
 
 namespace fodom {
 
 using Mat6 = Eigen::Matrix<Scalar, 6, 6>;
-using Mat12 = Eigen::Matrix<Scalar, 12, 12>;
 using Mat15 = Eigen::Matrix<Scalar, 15, 15>;
 using Vec6 = Eigen::Matrix<Scalar, 6, 1>;
 using Vec15 = Eigen::Matrix<Scalar, 15, 1>;
 using Mat3x15 = Eigen::Matrix<Scalar, 3, 15>;
-using Mat15x3 = Eigen::Matrix<Scalar, 15, 3>;
 using Mat6x15 = Eigen::Matrix<Scalar, 6, 15>;
-using Mat15x6 = Eigen::Matrix<Scalar, 15, 6>;
 using Mat15x12 = Eigen::Matrix<Scalar, 15, 12>;
 
 void Ekf::init_from_calib() {
@@ -31,7 +27,6 @@ void Ekf::init_from_calib() {
   state.rotation = Eigen::Quaternion<Scalar>::FromTwoVectors(
                        mean_accel.normalized(), (-config.gravity).normalized())
                        .toRotationMatrix();
-  // along-gravity component of accel bias is observable; transverse is not
   state.accel_bias =
       mean_accel - state.rotation.transpose() * (-config.gravity);
 
@@ -123,29 +118,24 @@ void Ekf::predict(const ImuMeasurement& imu, double stamp) {
   state.velocity += a_world * dt;
   state.rotation = normalize_so3(R0 * exp_so3(w * dt));
 
-  // First-order covariance propagation: P += dF*P + P*dF.T  (drops O(dt²) terms).
-  // Non-zero off-identity blocks of dF:
-  //   [pos,vel]=dt·I, [vel,rot]=B, [vel,ab]=C, [rot,rot]=D_off, [rot,gb]=E
-  const Mat3 B  = -dt * R0 * skew(a);
-  const Mat3 C  = -dt * R0;
+  // First-order covariance propagation
+  const Mat3 B = -dt * R0 * skew(a);
+  const Mat3 C = -dt * R0;
   const Mat3 Dw = -dt * skew(w);
 
-  // Capture dF*P rows from the unmodified P (all reads before any writes).
   const Eigen::Matrix<Scalar, 3, 15> dFP_pos = dt * state.P.block<3, 15>(3, 0);
-  const Eigen::Matrix<Scalar, 3, 15> dFP_vel = B * state.P.block<3, 15>(6, 0)
-                                              + C * state.P.block<3, 15>(9, 0);
-  const Eigen::Matrix<Scalar, 3, 15> dFP_rot = Dw * state.P.block<3, 15>(6, 0)
-                                              - dt * state.P.block<3, 15>(12, 0);
+  const Eigen::Matrix<Scalar, 3, 15> dFP_vel =
+      B * state.P.block<3, 15>(6, 0) + C * state.P.block<3, 15>(9, 0);
+  const Eigen::Matrix<Scalar, 3, 15> dFP_rot =
+      Dw * state.P.block<3, 15>(6, 0) - dt * state.P.block<3, 15>(12, 0);
 
-  // Symmetric rank-2k update: P += dF*P + (dF*P).T
-  state.P.block<3, 15>(0, 0)  += dFP_pos;
-  state.P.block<15, 3>(0, 0)  += dFP_pos.transpose();
-  state.P.block<3, 15>(3, 0)  += dFP_vel;
-  state.P.block<15, 3>(0, 3)  += dFP_vel.transpose();
-  state.P.block<3, 15>(6, 0)  += dFP_rot;
-  state.P.block<15, 3>(0, 6)  += dFP_rot.transpose();
+  state.P.block<3, 15>(0, 0) += dFP_pos;
+  state.P.block<15, 3>(0, 0) += dFP_pos.transpose();
+  state.P.block<3, 15>(3, 0) += dFP_vel;
+  state.P.block<15, 3>(0, 3) += dFP_vel.transpose();
+  state.P.block<3, 15>(6, 0) += dFP_rot;
+  state.P.block<15, 3>(0, 6) += dFP_rot.transpose();
 
-  // block update
   state.P.block<3, 3>(3, 3).diagonal().array() +=
       config.accel_noise * config.accel_noise * dt;
   state.P.block<3, 3>(6, 6).diagonal().array() +=
@@ -218,10 +208,10 @@ void Ekf::update_pose(const PoseType& pose, double stamp) {
   last_stamp = stamp;
 }
 
-void Ekf::update_points(const Mat15& H, const Vec15& b, bool update_cov) {
+void Ekf::update_points(const Mat15& Omega, const Vec15& b, bool update_cov) {
   if (status != EkfStatus::Running) return;
 
-  const Eigen::LDLT<Mat15> ldlt(state.P.inverse() + H);
+  const Eigen::LDLT<Mat15> ldlt(state.P.inverse() + Omega);
   const Vec15 dx = ldlt.solve(b);
 
   state.position += dx.segment<3>(0);
@@ -239,7 +229,6 @@ void Ekf::zupt() {
   H.block<3, 3>(0, 3) = Mat3::Identity();
 
   const Vec3 z = -state.velocity;
-
   ekf_update<3>(state, H, z, config.zupt_noise);
 }
 
@@ -248,6 +237,34 @@ PoseType Ekf::pose() const {
   p.linear() = state.rotation;
   p.translation() = state.position;
   return p;
+}
+
+PoseType interp_pose(const std::vector<std::pair<double, PoseType>>& traj,
+                     double t) {
+  if (t <= traj.front().first) return traj.front().second;
+  if (t >= traj.back().first) return traj.back().second;
+  auto it =
+      std::lower_bound(traj.begin(), traj.end(), t,
+                       [](const auto& e, double v) { return e.first < v; });
+  const auto& [t1, P1] = *it;
+  const auto& [t0, P0] = *std::prev(it);
+  const double a = (t - t0) / (t1 - t0);
+  PoseType out;
+  out.translation() =
+      P0.translation() + a * (P1.translation() - P0.translation());
+  out.linear() = Eigen::Quaterniond(P0.rotation())
+                     .slerp(a, Eigen::Quaterniond(P1.rotation()))
+                     .toRotationMatrix();
+  return out;
+}
+
+void deskew_cloud(PCloudType& cloud, double stamp,
+                  const std::vector<std::pair<double, PoseType>>& traj) {
+  const PoseType T_W_I_ref_inv = traj.back().second.inverse();
+  for (auto& p : cloud) {
+    const double t_abs = stamp + static_cast<double>(p.nsec) * 1e-9;
+    p.xyz = (T_W_I_ref_inv * interp_pose(traj, t_abs)) * p.xyz;
+  }
 }
 
 }  // namespace fodom

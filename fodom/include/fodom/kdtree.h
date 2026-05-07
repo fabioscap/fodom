@@ -15,7 +15,6 @@ using PCloudType = std::vector<PointType>;
 
 struct KdTreeConfig {
   size_t max_points_per_leaf = 20;
-  Scalar planar_ratio = 0.1;
   Scalar leaf_extent_sq = 0.04;
 
   size_t max_depth = 16;
@@ -28,39 +27,22 @@ struct TreeNode {
   Vec3 split_plane;
 
   size_t num_points;
-  Scalar planarity{1.0};  // λ_min/λ_max, lower = more planar
 
   std::unique_ptr<TreeNode> left;
   std::unique_ptr<TreeNode> right;
 
   TreeNode(PCloudType::iterator begin, PCloudType::iterator end,
-           const KdTreeConfig& config = KdTreeConfig(), size_t level = 0,
-           const TreeNode* ppl = nullptr);
+           const KdTreeConfig& config = KdTreeConfig(), size_t level = 0);
 
   const Vec3& nn_fast(const Vec3& point) const;
   const Vec3& nn_exact(const Vec3& point) const;
 
-  // mad-icp style plane parent
-  const TreeNode* parent_plane = nullptr;
   const TreeNode& nn_plane(const Vec3& point) const;
-};
-
-struct MatchConfig {
-  size_t n_iters = 100;
-  Scalar damping = 10;
-  Scalar max_correspondence_dist = 1.0;
-};
-
-struct MatchResult {
-  PoseType pose;
-  Scalar ratio{0.0};
 };
 
 void get_leaves(const TreeNode& tree, std::vector<Vec3>& leaves);
 
-// returns moving in fixed
-MatchResult match_kdtree(const TreeNode& fixed, const std::vector<Vec3>& moving,
-                         const PoseType& initial_guess = PoseType::Identity(),
-                         const MatchConfig& config = MatchConfig());
+// Applies a rigid transform to every point in the cloud in-place.
+void transform_cloud(PCloudType& cloud, const PoseType& T);
 
 }  // namespace fodom

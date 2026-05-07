@@ -5,8 +5,7 @@
 namespace fodom {
 
 TreeNode::TreeNode(PCloudType::iterator begin, PCloudType::iterator end,
-                   const KdTreeConfig& config, size_t level,
-                   const TreeNode* ppl) {
+                   const KdTreeConfig& config, size_t level) {
   const size_t n = std::distance(begin, end);
   num_points = n;
 
@@ -36,9 +35,6 @@ TreeNode::TreeNode(PCloudType::iterator begin, PCloudType::iterator end,
   const size_t n_right = std::distance(mid, end);
   const size_t next_level = level + 1;
 
-  planarity = solver.eigenvalues()(0) / (solver.eigenvalues()(2) + 1e-10);
-  parent_plane = (planarity < config.planar_ratio) ? this : ppl;
-
   const bool do_split = n_left > 0 && n_right > 0 &&
                         (n_left > config.max_points_per_leaf ||
                          n_right > config.max_points_per_leaf) &&
@@ -48,18 +44,14 @@ TreeNode::TreeNode(PCloudType::iterator begin, PCloudType::iterator end,
 
   if (level < config.max_parallel_level) {
     auto build_left = [this, begin, mid, &config, next_level]() {
-      left = std::make_unique<TreeNode>(begin, mid, config, next_level,
-                                        parent_plane);
+      left = std::make_unique<TreeNode>(begin, mid, config, next_level);
     };
     std::thread leftthread(build_left);
-    right =
-        std::make_unique<TreeNode>(mid, end, config, next_level, parent_plane);
+    right = std::make_unique<TreeNode>(mid, end, config, next_level);
     leftthread.join();
   } else {
-    left = std::make_unique<TreeNode>(begin, mid, config, next_level,
-                                      parent_plane);
-    right =
-        std::make_unique<TreeNode>(mid, end, config, next_level, parent_plane);
+    left = std::make_unique<TreeNode>(begin, mid, config, next_level);
+    right = std::make_unique<TreeNode>(mid, end, config, next_level);
   }
 }
 
@@ -89,8 +81,7 @@ const Vec3& TreeNode::nn_exact(const Vec3& point) const {
 }
 
 const TreeNode& TreeNode::nn_plane(const Vec3& point) const {
-  if (!left && !right)
-    return (parent_plane == this || !parent_plane) ? *this : *parent_plane;
+  if (!left && !right) return *this;
   if (!left) return right->nn_plane(point);
   if (!right) return left->nn_plane(point);
 
@@ -100,57 +91,6 @@ const TreeNode& TreeNode::nn_plane(const Vec3& point) const {
     return right->nn_plane(point);
 }
 
-MatchResult match_kdtree(const TreeNode& fixed, const std::vector<Vec3>& moving,
-                         const PoseType& initial_guess, const MatchConfig& config) {
-  PoseType X{initial_guess};
-
-  Eigen::Matrix<Scalar, 6, 6> H;
-  Eigen::Vector<Scalar, 6> b;
-
-  const Scalar max_dist_sq =
-      config.max_correspondence_dist * config.max_correspondence_dist;
-  size_t n_correspondences{0};
-  for (size_t i{0}; i < config.n_iters; ++i) {
-    n_correspondences = 0;
-    H.setZero();
-    b.setZero();
-
-    for (const auto& point : moving) {
-      const Vec3 point_transformed = X * point;
-      const auto& best_leaf = fixed.nn_plane(point_transformed);
-
-      if ((point_transformed - best_leaf.mean).squaredNorm() > max_dist_sq)
-        continue;
-
-      n_correspondences++;
-
-      const Scalar error =
-          (point_transformed - best_leaf.mean).dot(best_leaf.normal);
-
-      Eigen::Matrix<Scalar, 1, 6> J;
-      J << best_leaf.normal.transpose(),
-          -best_leaf.normal.transpose() * X.linear() * skew(point);
-
-      b += J.transpose() * error;
-      H += J.transpose() * J;
-    }
-
-    const Eigen::Matrix<Scalar, 6, 1> dx =
-        -(H + config.damping * Eigen::Matrix<Scalar, 6, 6>::Identity())
-             .ldlt()
-             .solve(b);
-
-    X.translation() += dx.head<3>();
-    X.linear() = X.linear() * exp_cayley(dx.tail<3>());
-  }
-
-  MatchResult result;
-  result.pose = X;
-  result.ratio = static_cast<Scalar>(n_correspondences) /
-                 static_cast<Scalar>(moving.size());
-  return result;
-}
-
 void get_leaves(const TreeNode& tree, std::vector<Vec3>& leaves) {
   if (!tree.left && !tree.right)
     leaves.push_back(tree.mean);
@@ -158,6 +98,10 @@ void get_leaves(const TreeNode& tree, std::vector<Vec3>& leaves) {
     get_leaves(*tree.left, leaves);
     get_leaves(*tree.right, leaves);
   }
+}
+
+void transform_cloud(PCloudType& cloud, const PoseType& T) {
+  for (auto& p : cloud) p.xyz = T * p.xyz;
 }
 
 }  // namespace fodom

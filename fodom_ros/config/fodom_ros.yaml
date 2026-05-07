@@ -24,6 +24,7 @@ fodom_ros_node:
 
     # ICP
     icp.n_iters: 20
+    icp.damping: 0.0
     icp.max_correspondence_dist: 0.15 # [m] reject matches beyond this
     icp.huber_delta: 0.07
 

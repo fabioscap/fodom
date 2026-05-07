@@ -149,8 +149,7 @@ void FodomROS::pc_cb(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
     sensor_msgs::PointCloud2Iterator<float> y_out(kf_msg, "y");
     sensor_msgs::PointCloud2Iterator<float> z_out(kf_msg, "z");
     for (const auto& p : leaves) {
-      const fodom::Vec3 pw =
-          odom_.keyframes.back().pose * odom_.config.imu_in_lidar.inverse() * p;
+      const fodom::Vec3 pw = odom_.keyframes.back().pose * p;
       *x_out = static_cast<float>(pw.x());
       *y_out = static_cast<float>(pw.y());
       *z_out = static_cast<float>(pw.z());
@@ -190,15 +189,13 @@ void FodomROS::init_params() {
       static_cast<size_t>(declare_parameter("kdtree.max_parallel_level", 3));
   odom_.config.kdtree.leaf_extent_sq =
       declare_parameter("kdtree.leaf_extent_sq", 0.04);
-  odom_.config.kdtree.planar_ratio =
-      declare_parameter("kdtree.planar_ratio", 0.1);
 
   odom_.config.icp.n_iters =
       static_cast<size_t>(declare_parameter("icp.n_iters", 10));
   odom_.config.icp.max_correspondence_dist =
       declare_parameter("icp.max_correspondence_dist", 1.0);
-  odom_.config.icp.huber_delta =
-      declare_parameter("icp.huber_delta", 0.1);
+  odom_.config.icp.huber_delta = declare_parameter("icp.huber_delta", 0.1);
+  odom_.config.icp.damping = declare_parameter("icp.damping", 0.0);
 
   odom_.config.scan_dt = declare_parameter("scan_dt", 0.1);
   odom_.config.kf_ratio = declare_parameter("keyframe_min_ratio", 0.3);
@@ -226,7 +223,8 @@ void FodomROS::init_params() {
   ekf.init_rot_var = declare_parameter("ekf.init_rot_var", 1e-3);
   ekf.init_accel_bias_var = declare_parameter("ekf.init_accel_bias_var", 1e-3);
   ekf.init_gyro_bias_var = declare_parameter("ekf.init_gyro_bias_var", 1e-6);
-  const auto g = declare_parameter("ekf.gravity", std::vector<double>{0.0, 0.0, -9.81});
+  const auto g =
+      declare_parameter("ekf.gravity", std::vector<double>{0.0, 0.0, -9.81});
   ekf.gravity = fodom::Vec3(g[0], g[1], g[2]);
 
   // row-major 4x4 homogeneous transform
