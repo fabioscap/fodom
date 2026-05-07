@@ -207,8 +207,6 @@ void FodomROS::init_params() {
   ekf.gyro_noise = declare_parameter("ekf.gyro_noise", 0.01);
   ekf.accel_bias_rw = declare_parameter("ekf.accel_bias_rw", 1e-4);
   ekf.gyro_bias_rw = declare_parameter("ekf.gyro_bias_rw", 1e-5);
-  ekf.pos_noise = declare_parameter("ekf.pos_noise", 0.05);
-  ekf.rot_noise = declare_parameter("ekf.rot_noise", 0.01);
   ekf.calib_samples =
       static_cast<size_t>(declare_parameter("ekf.calib_samples", 200));
   ekf.still_window = declare_parameter("ekf.still_window", 0.5);

@@ -21,8 +21,6 @@ struct EkfConfig {
   Scalar gyro_noise = 0.01;
   Scalar accel_bias_rw = 1e-4;
   Scalar gyro_bias_rw = 1e-5;
-  Scalar pos_noise = 0.05;
-  Scalar rot_noise = 0.01;
   Scalar point_noise = 0.02;
   Vec3 gravity{0.0, 0.0, -9.81};
 
@@ -57,7 +55,6 @@ struct Ekf {
   Ekf(EkfConfig& cfg) : config(cfg) {}
 
   const EkfState& step(double stamp, const ImuMeasurement& imu);
-  void update_pose(const PoseType& pose, double stamp);
 
   // Omega and b are the pre-weighted information matrix/vector.
   // Set update_cov=true only on the final IEKF iteration.

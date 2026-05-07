@@ -5,13 +5,8 @@
 
 namespace fodom {
 
-using Mat6 = Eigen::Matrix<Scalar, 6, 6>;
 using Mat15 = Eigen::Matrix<Scalar, 15, 15>;
-using Vec6 = Eigen::Matrix<Scalar, 6, 1>;
 using Vec15 = Eigen::Matrix<Scalar, 15, 1>;
-using Mat3x15 = Eigen::Matrix<Scalar, 3, 15>;
-using Mat6x15 = Eigen::Matrix<Scalar, 6, 15>;
-using Mat15x12 = Eigen::Matrix<Scalar, 15, 12>;
 
 void Ekf::init_from_calib() {
   const Scalar n = static_cast<Scalar>(calib_accels.size());
@@ -146,67 +141,6 @@ void Ekf::predict(const ImuMeasurement& imu, double stamp) {
       config.gyro_bias_rw * config.gyro_bias_rw * dt;
 }
 
-template <int N>
-static void ekf_update_(EkfState& state, const Eigen::Matrix<Scalar, N, 15>& H,
-                        const Eigen::Matrix<Scalar, N, 1>& z,
-                        const Eigen::Matrix<Scalar, N, N>& R,
-                        bool update_P = true) {
-  using Mat15xN = Eigen::Matrix<Scalar, 15, N>;
-  using MatNN = Eigen::Matrix<Scalar, N, N>;
-
-  const MatNN S = H * state.P * H.transpose() + R;
-  const Mat15xN K = state.P * H.transpose() * S.inverse();
-  const Vec15 dx = K * z;
-
-  state.position += dx.template segment<3>(0);
-  state.velocity += dx.template segment<3>(3);
-  state.rotation =
-      normalize_so3(state.rotation * exp_so3(dx.template segment<3>(6)));
-  state.accel_bias += dx.template segment<3>(9);
-  state.gyro_bias += dx.template segment<3>(12);
-
-  if (update_P) {
-    const Mat15 I_KH = Mat15::Identity() - K * H;
-    state.P = I_KH * state.P * I_KH.transpose() + K * R * K.transpose();
-  }
-}
-
-template <int N>
-static void ekf_update(EkfState& state, const Eigen::Matrix<Scalar, N, 15>& H,
-                       const Eigen::Matrix<Scalar, N, 1>& z,
-                       const Eigen::Matrix<Scalar, N, N>& R,
-                       size_t n_iters = 1) {
-  for (size_t i = 0; i < n_iters - 1; ++i) ekf_update_(state, H, z, R, false);
-  ekf_update_(state, H, z, R, true);
-}
-
-template <int N>
-static void ekf_update(EkfState& state, const Eigen::Matrix<Scalar, N, 15>& H,
-                       const Eigen::Matrix<Scalar, N, 1>& z, Scalar sigma,
-                       size_t n_iters = 1) {
-  const Eigen::Matrix<Scalar, N, N> R =
-      (sigma * sigma) * Eigen::Matrix<Scalar, N, N>::Identity();
-  ekf_update(state, H, z, R, n_iters);
-}
-
-void Ekf::update_pose(const PoseType& pose, double stamp) {
-  if (status != EkfStatus::Running) return;
-
-  Mat6x15 H = Mat6x15::Zero();
-  H.block<3, 3>(0, 0) = Mat3::Identity();
-  H.block<3, 3>(3, 6) = Mat3::Identity();
-
-  Vec6 z;
-  z.head<3>() = pose.translation() - state.position;
-  z.tail<3>() = log_so3(state.rotation.transpose() * pose.linear());
-
-  Eigen::Matrix<Scalar, 6, 6> R = Eigen::Matrix<Scalar, 6, 6>::Zero();
-  R.diagonal().head<3>().setConstant(config.pos_noise * config.pos_noise);
-  R.diagonal().tail<3>().setConstant(config.rot_noise * config.rot_noise);
-
-  ekf_update<6>(state, H, z, R);
-  last_stamp = stamp;
-}
 
 void Ekf::update_points(const Mat15& Omega, const Vec15& b, bool update_cov) {
   if (status != EkfStatus::Running) return;
@@ -225,11 +159,12 @@ void Ekf::update_points(const Mat15& Omega, const Vec15& b, bool update_cov) {
 void Ekf::zupt() {
   if (status != EkfStatus::Running) return;
 
-  Mat3x15 H = Mat3x15::Zero();
-  H.block<3, 3>(0, 3) = Mat3::Identity();
-
-  const Vec3 z = -state.velocity;
-  ekf_update<3>(state, H, z, config.zupt_noise);
+  const Scalar inv_var = Scalar(1) / (config.zupt_noise * config.zupt_noise);
+  Mat15 Omega = Mat15::Zero();
+  Vec15 b = Vec15::Zero();
+  Omega.block<3, 3>(3, 3).diagonal().setConstant(inv_var);
+  b.segment<3>(3) = inv_var * (-state.velocity);
+  update_points(Omega, b, true);
 }
 
 PoseType Ekf::pose() const {
