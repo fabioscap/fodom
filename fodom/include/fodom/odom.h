@@ -8,6 +8,12 @@
 
 namespace fodom {
 
+struct IcpConfig {
+  size_t n_iters = 10;
+  Scalar max_correspondence_dist = 1.0;
+  Scalar huber_delta = 0.1;  // [m] Huber threshold on point-to-plane residual
+};
+
 struct OdomConfig {
   Scalar kf_ratio = 0.4;
   Scalar scan_dt = 0.1;
@@ -16,7 +22,7 @@ struct OdomConfig {
   size_t max_keyframes = 4;
   KdTreeConfig kdtree;
   EkfConfig ekf;
-  ICPConfig icp;
+  IcpConfig icp;
 };
 
 struct Keyframe {

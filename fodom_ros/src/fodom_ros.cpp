@@ -195,9 +195,10 @@ void FodomROS::init_params() {
 
   odom_.config.icp.n_iters =
       static_cast<size_t>(declare_parameter("icp.n_iters", 10));
-  odom_.config.icp.damping = declare_parameter("icp.damping", 0.0);
   odom_.config.icp.max_correspondence_dist =
       declare_parameter("icp.max_correspondence_dist", 1.0);
+  odom_.config.icp.huber_delta =
+      declare_parameter("icp.huber_delta", 0.1);
 
   odom_.config.scan_dt = declare_parameter("scan_dt", 0.1);
   odom_.config.kf_ratio = declare_parameter("keyframe_min_ratio", 0.3);

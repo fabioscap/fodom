@@ -24,8 +24,8 @@ fodom_ros_node:
 
     # ICP
     icp.n_iters: 20
-    icp.damping: 1.0
-    icp.max_correspondence_dist: 0.1 # [m] reject matches beyond this
+    icp.max_correspondence_dist: 0.15 # [m] reject matches beyond this
+    icp.huber_delta: 0.07
 
     # Scan duration [s] — must match LiDAR spin period (e.g. 0.1 for 10 Hz, 0.05 for 20 Hz)
     scan_dt: 0.1

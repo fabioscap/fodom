@@ -43,7 +43,8 @@ static KfContrib accumulate_keyframe(const TreeNode& kf_tree,
                                      const std::vector<Vec3>& leaves,
                                      const PoseType& curr_lidar_in_world,
                                      const Vec3& imu_pos, const Mat3& imu_rot,
-                                     Scalar inv_var, Scalar max_dist_sq) {
+                                     Scalar inv_var, Scalar max_dist_sq,
+                                     Scalar huber_delta) {
   const PoseType curr_to_kf = kf_lidar_in_world.inverse() * curr_lidar_in_world;
 
   KfContrib result;
@@ -68,7 +69,9 @@ static KfContrib accumulate_keyframe(const TreeNode& kf_tree,
     const Scalar cos_inc =
         std::abs(n_world.dot((p_world - imu_pos).normalized()));
     const Scalar range_sq = point.squaredNorm();
-    const Scalar w = inv_var * cos_inc / (range_sq + 1e-6);
+    const Scalar abs_z = std::abs(z);
+    const Scalar w_huber = (abs_z <= huber_delta) ? 1.0 : huber_delta / abs_z;
+    const Scalar w = inv_var * cos_inc / (range_sq + 1e-6) * w_huber;
 
     result.H += w * J.transpose() * J;
     result.b += w * J.transpose() * z;
@@ -119,6 +122,7 @@ void Odom::feed_cloud(double stamp, PCloudType& cloud) {
       config.icp.max_correspondence_dist * config.icp.max_correspondence_dist;
   const Scalar inv_var =
       1.0 / (ekf.config.point_noise * ekf.config.point_noise);
+  const Scalar huber_delta = config.icp.huber_delta;
   const int max_pts = static_cast<int>(leaves.size() * keyframes.size());
 
   int valid = 0;
@@ -133,7 +137,8 @@ void Odom::feed_cloud(double stamp, PCloudType& cloud) {
       threads.emplace_back([&, k, kf_lidar_in_world]() {
         contribs[k] = accumulate_keyframe(
             *keyframes[k].tree, kf_lidar_in_world, leaves, lidar_curr_in_world,
-            ekf.state.position, ekf.state.rotation, inv_var, max_dist_sq);
+            ekf.state.position, ekf.state.rotation, inv_var, max_dist_sq,
+            huber_delta);
       });
     }
     for (auto& t : threads) t.join();

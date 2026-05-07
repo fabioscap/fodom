@@ -120,7 +120,7 @@ int main() {
 
   auto t0 = std::chrono::high_resolution_clock::now();
 
-  fodom::ICPConfig icp_config;
+  fodom::MatchConfig icp_config;
   icp_config.n_iters = 10;
   icp_config.damping = 0;
   auto result_icp = fodom::match_point_cloud(*fixed_tree, moving_cloud,

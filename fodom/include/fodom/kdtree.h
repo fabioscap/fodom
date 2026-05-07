@@ -45,13 +45,13 @@ struct TreeNode {
   const TreeNode& nn_plane(const Vec3& point) const;
 };
 
-struct ICPConfig {
+struct MatchConfig {
   size_t n_iters = 100;
   Scalar damping = 10;
   Scalar max_correspondence_dist = 1.0;
 };
 
-struct ICPResult {
+struct MatchResult {
   PoseType pose;
   Scalar ratio{0.0};
 };
@@ -59,8 +59,8 @@ struct ICPResult {
 void get_leaves(const TreeNode& tree, std::vector<Vec3>& leaves);
 
 // returns moving in fixed
-ICPResult match_kdtree(const TreeNode& fixed, const std::vector<Vec3>& moving,
-                       const PoseType& initial_guess = PoseType::Identity(),
-                       const ICPConfig& config = ICPConfig());
+MatchResult match_kdtree(const TreeNode& fixed, const std::vector<Vec3>& moving,
+                         const PoseType& initial_guess = PoseType::Identity(),
+                         const MatchConfig& config = MatchConfig());
 
 }  // namespace fodom

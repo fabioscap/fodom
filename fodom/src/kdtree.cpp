@@ -100,8 +100,8 @@ const TreeNode& TreeNode::nn_plane(const Vec3& point) const {
     return right->nn_plane(point);
 }
 
-ICPResult match_kdtree(const TreeNode& fixed, const std::vector<Vec3>& moving,
-                       const PoseType& initial_guess, const ICPConfig& config) {
+MatchResult match_kdtree(const TreeNode& fixed, const std::vector<Vec3>& moving,
+                         const PoseType& initial_guess, const MatchConfig& config) {
   PoseType X{initial_guess};
 
   Eigen::Matrix<Scalar, 6, 6> H;
@@ -144,7 +144,7 @@ ICPResult match_kdtree(const TreeNode& fixed, const std::vector<Vec3>& moving,
     X.linear() = X.linear() * exp_cayley(dx.tail<3>());
   }
 
-  ICPResult result;
+  MatchResult result;
   result.pose = X;
   result.ratio = static_cast<Scalar>(n_correspondences) /
                  static_cast<Scalar>(moving.size());

@@ -44,7 +44,7 @@ struct State {
 
   std::unique_ptr<fodom::TreeNode> fixed_tree;
   fodom::KdTreeConfig kd_config;
-  fodom::ICPConfig icp_config;
+  fodom::MatchConfig icp_config;
 
   fodom::PoseType result = fodom::PoseType::Identity();
   bool has_result = false;
