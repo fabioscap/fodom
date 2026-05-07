@@ -199,6 +199,7 @@ void FodomROS::init_params() {
   odom_.config.icp.max_correspondence_dist =
       declare_parameter("icp.max_correspondence_dist", 1.0);
 
+  odom_.config.scan_dt = declare_parameter("scan_dt", 0.1);
   odom_.config.kf_ratio = declare_parameter("keyframe_min_ratio", 0.3);
   odom_.config.max_keyframes =
       static_cast<size_t>(declare_parameter("max_keyframes", 4));

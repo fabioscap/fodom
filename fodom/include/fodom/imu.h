@@ -59,8 +59,10 @@ struct Ekf {
   void update_pose(const PoseType& pose, double stamp);
 
   // Omega and b are the pre-weighted information matrix/vector: Omega = Σ wᵢ·HᵢᵀHᵢ, b = Σ wᵢ·Hᵢᵀzᵢ
+  // Set update_cov=true only on the final IEKF iteration so P is not accumulated.
   void update_points(const Eigen::Matrix<Scalar, 15, 15>& Omega,
-                     const Eigen::Matrix<Scalar, 15, 1>& b);
+                     const Eigen::Matrix<Scalar, 15, 1>& b,
+                     bool update_cov = true);
   PoseType pose() const;
 
   EkfState state;

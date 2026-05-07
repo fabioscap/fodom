@@ -10,6 +10,7 @@ namespace fodom {
 
 struct OdomConfig {
   Scalar kf_ratio = 0.4;
+  Scalar scan_dt = 0.1;
   PoseType imu_in_lidar;
   size_t freq_ratio = 10;
   size_t max_keyframes = 4;

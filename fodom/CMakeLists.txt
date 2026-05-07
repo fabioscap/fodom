@@ -46,7 +46,7 @@ install(EXPORT fodomTargets
 )
 
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/fodomConfig.cmake"
-"include(CMakeFindDependencyMacro)\nfind_dependency(Eigen3)\ninclude(\"\${CMAKE_CURRENT_LIST_DIR}/fodomTargets.cmake\")\n")
+"include(CMakeFindDependencyMacro)\nfind_dependency(Eigen3)\nfind_dependency(Threads)\ninclude(\"\${CMAKE_CURRENT_LIST_DIR}/fodomTargets.cmake\")\n")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/fodomConfig.cmake"
   DESTINATION lib/cmake/fodom
 )

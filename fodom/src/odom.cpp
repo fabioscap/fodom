@@ -81,8 +81,7 @@ void Odom::feed_cloud(double stamp, PCloudType& cloud) {
   traj.clear();
   if (last_scan_stamp >= 0) traj.emplace_back(last_scan_stamp, ekf.pose());
 
-  const double scan_dt = 0.1;
-  const double scan_end_time = stamp + scan_dt;
+  const double scan_end_time = stamp + config.scan_dt;
   while (!imu_buf.empty() && imu_buf.front().first <= scan_end_time) {
     const auto [imu_stamp, imu] = imu_buf.front();
     ekf.step(imu_stamp, imu);
@@ -145,7 +144,8 @@ void Odom::feed_cloud(double stamp, PCloudType& cloud) {
     for (const auto& c : contribs) { H += c.H; b += c.b; valid += c.valid; }
 
     if (valid == 0) break;
-    ekf.update_points(H, b);
+    const bool is_last = (iter == static_cast<int>(config.icp.n_iters) - 1);
+    ekf.update_points(H, b, is_last);
   }
 
   const Scalar ratio =

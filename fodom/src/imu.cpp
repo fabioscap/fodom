@@ -123,14 +123,27 @@ void Ekf::predict(const ImuMeasurement& imu, double stamp) {
   state.velocity += a_world * dt;
   state.rotation = normalize_so3(R0 * exp_so3(w * dt));
 
-  Mat15 F = Mat15::Identity();
-  F.block<3, 3>(0, 3) += dt * Mat3::Identity();
-  F.block<3, 3>(3, 6) -= dt * R0 * skew(a);
-  F.block<3, 3>(3, 9) -= dt * R0;
-  F.block<3, 3>(6, 6) -= dt * skew(w);
-  F.block<3, 3>(6, 12) -= dt * Mat3::Identity();
+  // First-order covariance propagation: P += dF*P + P*dF.T  (drops O(dt²) terms).
+  // Non-zero off-identity blocks of dF:
+  //   [pos,vel]=dt·I, [vel,rot]=B, [vel,ab]=C, [rot,rot]=D_off, [rot,gb]=E
+  const Mat3 B  = -dt * R0 * skew(a);
+  const Mat3 C  = -dt * R0;
+  const Mat3 Dw = -dt * skew(w);
 
-  state.P = F * state.P * F.transpose();
+  // Capture dF*P rows from the unmodified P (all reads before any writes).
+  const Eigen::Matrix<Scalar, 3, 15> dFP_pos = dt * state.P.block<3, 15>(3, 0);
+  const Eigen::Matrix<Scalar, 3, 15> dFP_vel = B * state.P.block<3, 15>(6, 0)
+                                              + C * state.P.block<3, 15>(9, 0);
+  const Eigen::Matrix<Scalar, 3, 15> dFP_rot = Dw * state.P.block<3, 15>(6, 0)
+                                              - dt * state.P.block<3, 15>(12, 0);
+
+  // Symmetric rank-2k update: P += dF*P + (dF*P).T
+  state.P.block<3, 15>(0, 0)  += dFP_pos;
+  state.P.block<15, 3>(0, 0)  += dFP_pos.transpose();
+  state.P.block<3, 15>(3, 0)  += dFP_vel;
+  state.P.block<15, 3>(0, 3)  += dFP_vel.transpose();
+  state.P.block<3, 15>(6, 0)  += dFP_rot;
+  state.P.block<15, 3>(0, 6)  += dFP_rot.transpose();
 
   // block update
   state.P.block<3, 3>(3, 3).diagonal().array() +=
@@ -205,7 +218,7 @@ void Ekf::update_pose(const PoseType& pose, double stamp) {
   last_stamp = stamp;
 }
 
-void Ekf::update_points(const Mat15& H, const Vec15& b) {
+void Ekf::update_points(const Mat15& H, const Vec15& b, bool update_cov) {
   if (status != EkfStatus::Running) return;
 
   const Eigen::LDLT<Mat15> ldlt(state.P.inverse() + H);
@@ -216,7 +229,7 @@ void Ekf::update_points(const Mat15& H, const Vec15& b) {
   state.rotation = normalize_so3(state.rotation * exp_so3(dx.segment<3>(6)));
   state.accel_bias += dx.segment<3>(9);
   state.gyro_bias += dx.segment<3>(12);
-  state.P = ldlt.solve(Mat15::Identity());
+  if (update_cov) state.P = ldlt.solve(Mat15::Identity());
 }
 
 void Ekf::zupt() {
