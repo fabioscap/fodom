@@ -21,6 +21,9 @@ find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(rosbag2_cpp REQUIRED)
+find_package(rosbag2_storage REQUIRED)
+find_package(yaml_cpp_vendor REQUIRED)
 
 
 add_library(fodom_ros_components SHARED
@@ -52,7 +55,16 @@ add_executable(imu_noise_calib src/imu_noise_calib.cpp)
 ament_target_dependencies(imu_noise_calib rclcpp sensor_msgs)
 target_link_libraries(imu_noise_calib Eigen3::Eigen)
 
-install(TARGETS imu_noise_calib DESTINATION lib/${PROJECT_NAME})
+add_executable(bag_runner src/bag_runner.cpp)
+ament_target_dependencies(bag_runner
+  rclcpp
+  sensor_msgs
+  rosbag2_cpp
+  rosbag2_storage
+)
+target_link_libraries(bag_runner fodom::fodom yaml-cpp)
+
+install(TARGETS imu_noise_calib bag_runner DESTINATION lib/${PROJECT_NAME})
 
 install(
   TARGETS fodom_ros_components
